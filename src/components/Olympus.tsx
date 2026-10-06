@@ -1,0 +1,551 @@
+import React, { useState } from 'react';
+import {
+  MatchProbabilities,
+  AccumulatorItem,
+  WeeklyBetSlip,
+  FixtureData
+} from '../types';
+import {
+  Shield,
+  Zap,
+  TrendingUp,
+  Award,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Plus,
+  Trash2,
+  Share2,
+  Copy,
+  Check,
+  Calculator,
+  Flame,
+  AlertTriangle,
+  Info,
+  DollarSign
+} from 'lucide-react';
+
+interface OlympusProps {
+  probs: MatchProbabilities;
+  fixture: FixtureData;
+  accumulatorItems: AccumulatorItem[];
+  onRemoveItem: (id: string) => void;
+  onClearAccumulator: () => void;
+  onAddItem: (item: AccumulatorItem) => void;
+  savedSlips: WeeklyBetSlip[];
+  onSaveSlip: (slip: WeeklyBetSlip) => void;
+  onUpdateSlipStatus: (slipId: string, status: 'won' | 'lost' | 'pending') => void;
+}
+
+export const Olympus: React.FC<OlympusProps> = ({
+  probs,
+  fixture,
+  accumulatorItems,
+  onRemoveItem,
+  onClearAccumulator,
+  onAddItem,
+  savedSlips,
+  onSaveSlip,
+  onUpdateSlipStatus
+}) => {
+  const [selectedMarketName, setSelectedMarketName] = useState<string>(
+    probs.outcomes[0]?.marketName || 'Home Win (1)'
+  );
+  const [bookieOdds, setBookieOdds] = useState<number>(
+    probs.outcomes[0]?.fairOdds || 1.85
+  );
+  const [stake, setStake] = useState<number>(10);
+  const [copiedShare, setCopiedShare] = useState<boolean>(false);
+  const [showShareModal, setShowShareModal] = useState<boolean>(false);
+
+  // Custom Quick Pick state
+  const [customMatch, setCustomMatch] = useState<string>(`${fixture.homeTeam} vs ${fixture.awayTeam}`);
+  const [customMarket, setCustomMarket] = useState<string>('Over 1.5 Goals');
+  const [customOdds, setCustomOdds] = useState<number>(1.45);
+  const [customProb, setCustomProb] = useState<number>(75.0);
+
+  // Calculate Value Odds Metrics for current selected market
+  const matchedOutcome = probs.outcomes.find(o => o.marketName === selectedMarketName);
+  const modelProbPct = matchedOutcome ? matchedOutcome.probability : 55.0;
+  const modelProbDecimal = modelProbPct / 100;
+  const modelFairOdds = matchedOutcome ? matchedOutcome.fairOdds : 1.82;
+
+  const edgeVal = ((modelProbDecimal * bookieOdds) - 1) * 100;
+  const edgePct = edgeVal.toFixed(2);
+  const hasEdge = edgeVal > 0;
+
+  // Accumulator overall calculations
+  const totalAccumulatorOdds = accumulatorItems.reduce((acc, item) => acc * item.odds, 1);
+  const combinedProbDecimal = accumulatorItems.reduce((acc, item) => acc * (item.probability / 100), 1);
+  const combinedProbPct = (combinedProbDecimal * 100).toFixed(2);
+  const potentialPayout = (stake * totalAccumulatorOdds).toFixed(2);
+  const expectedValue = (Number(potentialPayout) * combinedProbDecimal - stake).toFixed(2);
+
+  // Success tracking stats
+  const totalSlips = savedSlips.length;
+  const wonSlips = savedSlips.filter(s => s.status === 'won').length;
+  const winRate = totalSlips > 0 ? ((wonSlips / totalSlips) * 100).toFixed(2) : '0.00';
+  const totalStaked = savedSlips.reduce((acc, s) => acc + s.stake, 0);
+  const totalReturned = savedSlips.reduce((acc, s) => (s.status === 'won' ? acc + s.potentialPayout : 0), 0);
+  const netProfit = (totalReturned - totalStaked).toFixed(2);
+
+  const handleAddCustomToAcc = () => {
+    const newItem: AccumulatorItem = {
+      id: `acc_custom_${Date.now()}`,
+      fixtureId: fixture.id,
+      matchName: customMatch,
+      marketName: customMarket,
+      selection: customMarket,
+      odds: customOdds,
+      probability: customProb,
+      dataContext: `Custom analyst selection with ${customProb.toFixed(2)}% model probability.`,
+      riskFactor: customProb >= 70 ? 'Low risk' : 'Moderate risk',
+      riskLevel: customProb >= 70 ? 'low' : customProb >= 50 ? 'moderate' : 'high',
+      status: 'pending'
+    };
+    onAddItem(newItem);
+  };
+
+  const handleSaveCurrentSlip = () => {
+    if (accumulatorItems.length === 0) return;
+    const newSlip: WeeklyBetSlip = {
+      id: `slip_${Date.now()}`,
+      title: `GW${fixture.gameweek} Acca (${accumulatorItems.length} Legs)`,
+      gameweek: fixture.gameweek,
+      date: new Date().toISOString().split('T')[0],
+      items: [...accumulatorItems],
+      stake,
+      totalOdds: Number(totalAccumulatorOdds.toFixed(2)),
+      potentialPayout: Number(potentialPayout),
+      status: 'pending'
+    };
+    onSaveSlip(newSlip);
+  };
+
+  const getShareText = () => {
+    let text = `⚡ 401 PREDICT • OLYMPUS ACCUMULATOR SLIP\n`;
+    text += `==================================\n`;
+    accumulatorItems.forEach((item, idx) => {
+      text += `${idx + 1}. ${item.matchName}\n   📌 Pick: ${item.marketName} @ ${item.odds.toFixed(2)} (${item.probability.toFixed(2)}% prob)\n`;
+    });
+    text += `==================================\n`;
+    text += `📊 Total Odds: @${totalAccumulatorOdds.toFixed(2)}\n`;
+    text += `🎯 Combined Win Probability: ${combinedProbPct}%\n`;
+    text += `💵 Est. Return ($${stake}): $${potentialPayout}\n`;
+    text += `🔗 Generated by 401 PREDICT ML Engine`;
+    return text;
+  };
+
+  const handleCopyShare = () => {
+    navigator.clipboard.writeText(getShareText());
+    setCopiedShare(true);
+    setTimeout(() => setCopiedShare(false), 2000);
+  };
+
+  return (
+    <div className="space-y-8 animate-fade-in">
+      {/* Header Banner */}
+      <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 border border-emerald-500/30 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+        <div className="absolute right-0 top-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
+          <div className="space-y-1">
+            <div className="flex items-center space-x-2">
+              <div className="p-2 bg-emerald-500/20 rounded-lg text-emerald-400">
+                <Shield className="w-6 h-6" />
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black text-slate-100 tracking-tight flex items-center gap-2">
+                🏛️ OLYMPUS ENGINE & ACCUMULATOR HUB
+              </h2>
+            </div>
+            <p className="text-xs text-slate-400 max-w-2xl">
+              Live data feed, value odds detector, mock betting accumulator slip, and weekly performance & ROI tracking engine.
+            </p>
+          </div>
+
+          <div className="flex items-center space-x-3 shrink-0">
+            <button
+              onClick={() => setShowShareModal(true)}
+              disabled={accumulatorItems.length === 0}
+              className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-xs hover:bg-emerald-500/30 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Share2 className="w-4 h-4" />
+              <span>Share Accumulator ({accumulatorItems.length})</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Grid: Accumulator Widget & Value Calculator */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left Column: Betting Accumulator / Bet Slip (7 Cols) */}
+        <div className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-5 shadow-xl">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div className="flex items-center space-x-2">
+              <Flame className="w-5 h-5 text-amber-400" />
+              <h3 className="text-base font-extrabold text-slate-100">
+                Mock Betting Accumulator Slip
+              </h3>
+              <span className="bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-mono px-2 py-0.5 rounded-full font-bold">
+                {accumulatorItems.length} Selections
+              </span>
+            </div>
+
+            {accumulatorItems.length > 0 && (
+              <button
+                onClick={onClearAccumulator}
+                className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1 cursor-pointer font-semibold"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Clear
+              </button>
+            )}
+          </div>
+
+          {/* List of Selections */}
+          {accumulatorItems.length === 0 ? (
+            <div className="text-center py-10 px-4 bg-slate-950/60 rounded-xl border border-dashed border-slate-800 space-y-3">
+              <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center mx-auto text-slate-500">
+                <Plus className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-slate-300">Your Accumulator is Empty</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Add predictions from Match Forecasting, Player Outcomes, or the Quick Pick form below to track your bets!
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+              {accumulatorItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-2 relative group hover:border-slate-700 transition-colors"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-mono uppercase font-bold block">
+                        {item.matchName}
+                      </span>
+                      <h4 className="text-sm font-black text-emerald-400">
+                        {item.marketName}
+                      </h4>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <span className="bg-slate-900 border border-slate-700 font-mono font-bold text-xs text-slate-200 px-2 py-0.5 rounded">
+                        @{item.odds.toFixed(2)}
+                      </span>
+                      <button
+                        onClick={() => onRemoveItem(item.id)}
+                        className="text-slate-500 hover:text-rose-400 transition-colors p-1 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Context & Risk */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-900">
+                    <div className="text-slate-400 flex items-start gap-1">
+                      <Info className="w-3 h-3 text-cyan-400 shrink-0 mt-0.5" />
+                      <span>{item.dataContext || 'High probability outcome model fit.'}</span>
+                    </div>
+
+                    <div className="text-amber-300/80 flex items-start gap-1">
+                      <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                      <span>{item.riskFactor || 'Standard match variance.'}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Quick Custom Selection Form */}
+          <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 space-y-3">
+            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+              + Add Custom Pick to Accumulator
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs">
+              <input
+                type="text"
+                value={customMatch}
+                onChange={e => setCustomMatch(e.target.value)}
+                placeholder="Match"
+                className="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-slate-100 font-medium focus:outline-none focus:border-emerald-500"
+              />
+              <input
+                type="text"
+                value={customMarket}
+                onChange={e => setCustomMarket(e.target.value)}
+                placeholder="Market"
+                className="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-slate-100 font-medium focus:outline-none focus:border-emerald-500"
+              />
+              <input
+                type="number"
+                step="0.05"
+                value={customOdds}
+                onChange={e => setCustomOdds(Number(e.target.value))}
+                placeholder="Odds"
+                className="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-emerald-400 font-mono font-bold focus:outline-none focus:border-emerald-500"
+              />
+              <button
+                onClick={handleAddCustomToAcc}
+                className="bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-extrabold rounded px-3 py-1.5 transition-colors cursor-pointer flex items-center justify-center gap-1"
+              >
+                <Plus className="w-4 h-4" />
+                Add Pick
+              </button>
+            </div>
+          </div>
+
+          {/* Accumulator Summary Box */}
+          {accumulatorItems.length > 0 && (
+            <div className="bg-slate-950 rounded-xl p-4 border border-emerald-500/30 space-y-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                <div className="bg-slate-900/80 p-2.5 rounded-lg border border-slate-800">
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block">Total Odds</span>
+                  <span className="text-base font-black text-amber-400 font-mono">@{totalAccumulatorOdds.toFixed(2)}</span>
+                </div>
+
+                <div className="bg-slate-900/80 p-2.5 rounded-lg border border-slate-800">
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block">Combined Prob</span>
+                  <span className="text-base font-black text-cyan-400 font-mono">{combinedProbPct}%</span>
+                </div>
+
+                <div className="bg-slate-900/80 p-2.5 rounded-lg border border-slate-800">
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block">Stake ($)</span>
+                  <input
+                    type="number"
+                    value={stake}
+                    onChange={e => setStake(Math.max(1, Number(e.target.value)))}
+                    className="w-16 mx-auto bg-slate-950 border border-slate-700 text-center font-mono font-black text-emerald-400 text-sm rounded focus:outline-none"
+                  />
+                </div>
+
+                <div className="bg-slate-900/80 p-2.5 rounded-lg border border-slate-800">
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block">Est. Return</span>
+                  <span className="text-base font-black text-emerald-400 font-mono">${potentialPayout}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-xs pt-1">
+                <span className="text-slate-400 font-medium">Expected Value (+EV): <strong className="text-emerald-400 font-mono">${expectedValue}</strong></span>
+                <button
+                  onClick={handleSaveCurrentSlip}
+                  className="bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-black px-4 py-2 rounded-lg hover:scale-105 transition-all shadow-lg shadow-emerald-500/20 cursor-pointer"
+                >
+                  Save Slip to History
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right Column: Live Data & Value Odds Calculator (5 Cols) */}
+        <div className="lg:col-span-5 space-y-6">
+          {/* Live Market Value Detector */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-xl">
+            <div className="flex items-center space-x-2 border-b border-slate-800 pb-3">
+              <Calculator className="w-5 h-5 text-emerald-400" />
+              <h3 className="text-base font-extrabold text-slate-100">
+                Live Value Odds Calculator
+              </h3>
+            </div>
+
+            {/* Market Selection */}
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-400 uppercase">
+                Target Market Outcome:
+              </label>
+              <select
+                value={selectedMarketName}
+                onChange={e => {
+                  setSelectedMarketName(e.target.value);
+                  const m = probs.outcomes.find(o => o.marketName === e.target.value);
+                  if (m) setBookieOdds(m.fairOdds);
+                }}
+                className="w-full bg-slate-950 border border-slate-700 text-slate-100 font-bold rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500"
+              >
+                {probs.outcomes.map(o => (
+                  <option key={o.id} value={o.marketName}>
+                    {o.marketName} ({o.probability.toFixed(2)}%)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Bookmaker Odds Input */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs font-bold">
+                <span className="text-slate-400 uppercase">Bookmaker Odds:</span>
+                <span className="text-cyan-400 font-mono">Model Fair Odds: @{modelFairOdds.toFixed(2)}</span>
+              </div>
+              <input
+                type="number"
+                step="0.05"
+                min="1.01"
+                value={bookieOdds}
+                onChange={e => setBookieOdds(Number(e.target.value))}
+                className="w-full bg-slate-950 border border-slate-700 text-emerald-400 font-mono font-black rounded-lg px-3 py-2 text-base focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            {/* Edge Analysis Result */}
+            <div className={`p-4 rounded-xl border text-center space-y-1 ${
+              hasEdge
+                ? 'bg-emerald-950/50 border-emerald-500/40 text-emerald-300'
+                : 'bg-rose-950/50 border-rose-500/40 text-rose-300'
+            }`}>
+              <span className="text-[10px] font-bold uppercase tracking-wider block opacity-80">
+                Detected Edge / Value Rating
+              </span>
+              <div className="text-2xl font-black font-mono">
+                {hasEdge ? `+${edgePct}% Value Edge` : `${edgePct}% Negative Edge`}
+              </div>
+              <p className="text-[11px] opacity-90 font-medium">
+                {hasEdge
+                  ? `Bookmaker odds (@${bookieOdds.toFixed(2)}) exceed 401 Model fair odds (@${modelFairOdds.toFixed(2)}). Positive expected value detected.`
+                  : `Bookmaker odds (@${bookieOdds.toFixed(2)}) are lower than 401 Model fair odds (@${modelFairOdds.toFixed(2)}). Margin favors the house.`
+                }
+              </p>
+            </div>
+          </div>
+
+          {/* Weekly Betting Performance & Win-Rate Tracker */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-xl">
+            <div className="flex items-center space-x-2 border-b border-slate-800 pb-3">
+              <Award className="w-5 h-5 text-amber-400" />
+              <h3 className="text-base font-extrabold text-slate-100">
+                Weekly Betting Success Tracker
+              </h3>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-500 uppercase font-bold block">Win Rate</span>
+                <span className="text-lg font-black text-emerald-400 font-mono">{winRate}%</span>
+              </div>
+
+              <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-500 uppercase font-bold block">Saved Slips</span>
+                <span className="text-lg font-black text-slate-200 font-mono">{totalSlips}</span>
+              </div>
+
+              <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-500 uppercase font-bold block">Net Profit</span>
+                <span className={`text-lg font-black font-mono ${Number(netProfit) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  ${netProfit}
+                </span>
+              </div>
+            </div>
+
+            {/* Saved Slips History */}
+            <div className="space-y-2 pt-2">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+                Saved Slips Vetting Log
+              </span>
+
+              {savedSlips.length === 0 ? (
+                <p className="text-xs text-slate-500 italic text-center py-4">
+                  No saved slips yet. Build an accumulator and save it to track outcomes!
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {savedSlips.map(slip => (
+                    <div
+                      key={slip.id}
+                      className="bg-slate-950 border border-slate-800 rounded-xl p-3 flex items-center justify-between text-xs"
+                    >
+                      <div>
+                        <div className="font-bold text-slate-200">{slip.title}</div>
+                        <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                          {slip.date} • @{slip.totalOdds.toFixed(2)} • Est: ${slip.potentialPayout.toFixed(2)}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-1.5">
+                        <button
+                          onClick={() => onUpdateSlipStatus(slip.id, 'won')}
+                          className={`p-1 rounded cursor-pointer ${slip.status === 'won' ? 'bg-emerald-500 text-slate-950 font-bold' : 'bg-slate-800 text-slate-400 hover:text-emerald-400'}`}
+                          title="Mark Won"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => onUpdateSlipStatus(slip.id, 'lost')}
+                          className={`p-1 rounded cursor-pointer ${slip.status === 'lost' ? 'bg-rose-500 text-slate-100 font-bold' : 'bg-slate-800 text-slate-400 hover:text-rose-400'}`}
+                          title="Mark Lost"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => onUpdateSlipStatus(slip.id, 'pending')}
+                          className={`p-1 rounded cursor-pointer ${slip.status === 'pending' ? 'bg-amber-500 text-slate-950 font-bold' : 'bg-slate-800 text-slate-400 hover:text-amber-400'}`}
+                          title="Mark Pending"
+                        >
+                          <Clock className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Share Modal */}
+      {showShareModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl relative">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-extrabold text-slate-100 flex items-center gap-2">
+                <Share2 className="w-5 h-5 text-emerald-400" />
+                <span>Share Accumulator Slip</span>
+              </h3>
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="text-slate-400 hover:text-slate-100 text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Format Ticket Box */}
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs text-slate-300 space-y-2 whitespace-pre-line leading-relaxed">
+              {getShareText()}
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-slate-200 cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                onClick={handleCopyShare}
+                className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 hover:scale-105 transition-all cursor-pointer"
+              >
+                {copiedShare ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Copied to Clipboard!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    <span>Copy Slip Text</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

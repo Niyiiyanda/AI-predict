@@ -1,0 +1,8 @@
+{
+  "name": "Remix 401 Predict Tool",
+  "description": "Automated Football Forecasting Engine & Machine Learning Probability Calculator for Europe's Top 5 Leagues",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
